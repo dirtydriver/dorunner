@@ -70,6 +70,62 @@ func (d *DOClient) getDropletId(ctx context.Context, runnerName string) (int, er
 	return id[0].ID, nil
 }
 
+func (d *DOClient) getDropletsByTag(ctx context.Context, tag string) ([]godo.Droplet, error) {
+	droplets, _, err := d.client.Droplets.ListByTag(ctx, tag, nil)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get droplets by tag %s: %w", tag, err)
+	}
+
+	return droplets, nil
+}
+
+func (d *DOClient) deleteOrphanedDroplets(ctx context.Context, ttl time.Duration) error {
+	droplets, err := d.getDropletsByTag(ctx, "github-runner")
+	if err != nil {
+		return fmt.Errorf("failed to get droplets by tag: %w", err)
+	}
+
+	for _, droplet := range droplets {
+		created, err := time.Parse(time.RFC3339, droplet.Created)
+		if err != nil {
+			log.Printf("failed to parse droplet creation time for %s: %v", droplet.Name, err)
+			continue
+		}
+
+		age := time.Since(created)
+
+		if age > ttl {
+			log.Printf("Droplet %s is older than %v, deleting", droplet.Name, ttl)
+			_, err := d.client.Droplets.Delete(ctx, droplet.ID)
+			if err != nil {
+				log.Printf("failed to delete droplet %d: %v", droplet.ID, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+func (d *DOClient) StartCleanupCron(ctx context.Context, interval, ttl time.Duration) {
+
+	ticker := time.NewTicker(interval)
+
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			if err := d.deleteOrphanedDroplets(ctx, ttl); err != nil {
+				log.Printf("failed to delete orphaned droplets: %v", err)
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
+
+}
+
 func (d *DOClient) DeleteDroplet(ctx context.Context, runnerName string) error {
 	runnerID, err := d.getDropletId(ctx, runnerName)
 	if err != nil {
