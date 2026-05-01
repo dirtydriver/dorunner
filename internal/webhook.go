@@ -107,7 +107,6 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		default:
 			return
-			// TODO: Process the webhook payload
 		}
 	}()
 
