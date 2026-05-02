@@ -18,10 +18,10 @@ type Config struct {
 	GitHubRunnerGroupID  int64
 	GitHubRunnerLabels   []string
 	DOToken              string
-	DORunnerSize         string
 	DORunnerSnapshotID   *int
 	DORunnerImageSlug    *string
 	RunnerTTL            time.Duration
+	RunnerVersion        string
 }
 
 func LoadConfig() *Config {
@@ -102,6 +102,7 @@ func LoadConfig() *Config {
 		DORunnerSnapshotID:   dorunnerSnapshotID,
 		DORunnerImageSlug:    dorunnerImageSlugPtr,
 		RunnerTTL:            runnerTTL,
+		RunnerVersion:        optional("RUNNER_VERSION", "2.334.0"),
 	}
 
 	if cfg.DORunnerSnapshotID == nil && cfg.DORunnerImageSlug == nil {
