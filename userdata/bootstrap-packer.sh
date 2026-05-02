@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 JIT_CONFIG="{{ .JITConfig }}"
 

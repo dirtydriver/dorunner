@@ -1,5 +1,5 @@
 #!/bin/bash
-
+set -e
 JIT_CONFIG="{{ .JITConfig }}"
 RUNNER_VERSION="{{ .RunnerVersion }}"
 
