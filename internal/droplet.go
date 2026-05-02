@@ -1,33 +1,50 @@
 package internal
 
 import (
+	"bytes"
 	"context"
+	_ "embed"
 	"fmt"
 	"log"
 	"strconv"
 	"strings"
 	"sync"
+	"text/template"
 	"time"
 
 	"github.com/digitalocean/godo"
 )
 
+//go:embed  ../userdata/bootstrap_packer.sh
+var bootstrapPacker string
+
+//go:embed  ../userdata/bootstrap_stock.sh
+var bootstrapStock string
+
 type DOClient struct {
-	client    *godo.Client
-	mu        sync.RWMutex
-	snapshots []godo.Snapshot
+	client        *godo.Client
+	mu            sync.RWMutex
+	snapshots     []godo.Snapshot
+	runnerVersion string
 }
 
 type DropletConfig struct {
-	Region string
-	Size   string
-	Image  godo.DropletCreateImage
+	Region        string
+	Size          string
+	Image         godo.DropletCreateImage
+	BootStrapType string
+}
+
+type BootstrapData struct {
+	JITConfig     string
+	RunnerVersion string
 }
 
 func NewDOClient(cfg *Config) *DOClient {
 
 	client := &DOClient{
-		client: godo.NewFromToken(cfg.DOToken),
+		client:        godo.NewFromToken(cfg.DOToken),
+		runnerVersion: cfg.RunnerVersion,
 	}
 
 	if err := client.fetchSnapshot(context.Background()); err != nil {
@@ -42,18 +59,52 @@ func (d *DOClient) CreateDroplet(ctx context.Context, runnerName string, jitConf
 	if err != nil {
 		return fmt.Errorf("failed to parse labels: %w", err)
 	}
+
+	var script string
+
+	switch cfg.BootStrapType {
+	case "packer":
+		script = bootstrapPacker
+	case "stock":
+		script = bootstrapStock
+	default:
+		return fmt.Errorf("invalid bootstrap type: %s", cfg.BootStrapType)
+	}
+
+	userData, err := renderUserData(script, BootstrapData{
+		JITConfig:     jitConfig,
+		RunnerVersion: d.runnerVersion,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to render user data: %w", err)
+	}
 	_, _, err = d.client.Droplets.Create(ctx, &godo.DropletCreateRequest{
 		Name:     runnerName,
 		Region:   cfg.Region,
 		Size:     cfg.Size,
 		Image:    cfg.Image,
 		Tags:     []string{"github-runner"},
-		UserData: fmt.Sprintf("#!/bin/bash\nJIT_CONFIG=\"%s\"", jitConfig),
+		UserData: userData,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create droplet: %w", err)
 	}
 	return nil
+}
+
+func renderUserData(script string, data BootstrapData) (string, error) {
+
+	tmpl, err := template.New("bootstrap").Parse(script)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse template: %w", err)
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return "", fmt.Errorf("failed to execute template: %w", err)
+	}
+
+	return buf.String(), nil
 }
 
 func (d *DOClient) getDropletId(ctx context.Context, runnerName string) (int, error) {
@@ -190,6 +241,7 @@ func (d *DOClient) parseLabels(labels []string) (*DropletConfig, error) {
 			doConfig.Size = value
 		case "image":
 			doConfig.Image = godo.DropletCreateImage{Slug: value}
+			doConfig.BootStrapType = "stock"
 		case "snapshot":
 
 			var snapshotID int
@@ -208,6 +260,7 @@ func (d *DOClient) parseLabels(labels []string) (*DropletConfig, error) {
 				return nil, fmt.Errorf("snapshot %s not found", value)
 			}
 			doConfig.Image = godo.DropletCreateImage{ID: snapshotID}
+			doConfig.BootStrapType = "packer"
 		}
 	}
 
@@ -223,6 +276,7 @@ func (d *DOClient) parseLabels(labels []string) (*DropletConfig, error) {
 
 	if doConfig.Image.Slug == "" && doConfig.Image.ID == 0 {
 		doConfig.Image = godo.DropletCreateImage{Slug: "ubuntu-22-04-x64"}
+		doConfig.BootStrapType = "stock"
 		log.Printf("image is not specified, using default: %s", doConfig.Image.Slug)
 	}
 
