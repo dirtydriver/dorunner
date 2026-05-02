@@ -21,6 +21,9 @@ var bootstrapPacker string
 //go:embed userdata/bootstrap-stock.sh
 var bootstrapStock string
 
+// DOClient wraps the DigitalOcean godo client and maintains a cached list of
+// account snapshots so droplet creation can resolve snapshot names to IDs
+// without a live API call on every request.
 type DOClient struct {
 	client        *godo.Client
 	mu            sync.RWMutex
@@ -28,18 +31,25 @@ type DOClient struct {
 	runnerVersion string
 }
 
+// DropletConfig holds the resolved parameters for a new droplet, derived from
+// the GitHub Actions runner labels attached to a workflow job.
 type DropletConfig struct {
 	Region        string
 	Size          string
 	Image         godo.DropletCreateImage
-	BootStrapType string
+	BootStrapType string // "packer" or "stock"
 }
 
+// BootstrapData is the template context injected into the cloud-init user-data
+// scripts at droplet creation time.
 type BootstrapData struct {
-	JITConfig     string
-	RunnerVersion string
+	JITConfig     string // base64-encoded just-in-time runner config from GitHub
+	RunnerVersion string // actions/runner release tag, e.g. "2.334.0"
 }
 
+// NewDOClient creates a DOClient authenticated with the token in cfg, then
+// eagerly fetches the account's droplet snapshots so they are available for
+// the first CreateDroplet call. Exits the process if the initial fetch fails.
 func NewDOClient(cfg *Config) *DOClient {
 
 	client := &DOClient{
@@ -54,6 +64,11 @@ func NewDOClient(cfg *Config) *DOClient {
 	return client
 }
 
+// CreateDroplet provisions an ephemeral DigitalOcean droplet for a single
+// GitHub Actions job. It resolves the droplet parameters from the job's runner
+// labels (region, size, image/snapshot), renders the appropriate cloud-init
+// bootstrap script with the JIT config, then calls the Droplets.Create API.
+// The droplet is tagged "github-runner" so the cleanup cron can find it later.
 func (d *DOClient) CreateDroplet(ctx context.Context, runnerName string, jitConfig string, labels []string) error {
 	cfg, err := d.parseLabels(labels)
 	if err != nil {
@@ -92,6 +107,8 @@ func (d *DOClient) CreateDroplet(ctx context.Context, runnerName string, jitConf
 	return nil
 }
 
+// renderUserData executes script as a Go text/template with data as context,
+// returning the rendered cloud-init user-data string.
 func renderUserData(script string, data BootstrapData) (string, error) {
 
 	tmpl, err := template.New("bootstrap").Parse(script)
@@ -107,6 +124,7 @@ func renderUserData(script string, data BootstrapData) (string, error) {
 	return buf.String(), nil
 }
 
+// getDropletId resolves a droplet name to its numeric DigitalOcean ID.
 func (d *DOClient) getDropletId(ctx context.Context, runnerName string) (int, error) {
 	id, _, err := d.client.Droplets.ListByName(ctx, runnerName, nil)
 
@@ -121,6 +139,7 @@ func (d *DOClient) getDropletId(ctx context.Context, runnerName string) (int, er
 	return id[0].ID, nil
 }
 
+// getDropletsByTag returns all droplets carrying the given tag.
 func (d *DOClient) getDropletsByTag(ctx context.Context, tag string) ([]godo.Droplet, error) {
 	droplets, _, err := d.client.Droplets.ListByTag(ctx, tag, nil)
 
@@ -131,6 +150,10 @@ func (d *DOClient) getDropletsByTag(ctx context.Context, tag string) ([]godo.Dro
 	return droplets, nil
 }
 
+// deleteOrphanedDroplets deletes every "github-runner"-tagged droplet whose
+// age exceeds ttl. This guards against droplets that were never cleaned up by
+// the normal "completed" webhook path (e.g. the job was cancelled or the
+// server restarted before receiving the event).
 func (d *DOClient) deleteOrphanedDroplets(ctx context.Context, ttl time.Duration) error {
 	droplets, err := d.getDropletsByTag(ctx, "github-runner")
 	if err != nil {
@@ -158,6 +181,8 @@ func (d *DOClient) deleteOrphanedDroplets(ctx context.Context, ttl time.Duration
 	return nil
 }
 
+// StartCleanupCron runs deleteOrphanedDroplets on a recurring interval until
+// ctx is cancelled. Intended to be called in a goroutine from main.
 func (d *DOClient) StartCleanupCron(ctx context.Context, interval, ttl time.Duration) {
 
 	ticker := time.NewTicker(interval)
@@ -177,6 +202,8 @@ func (d *DOClient) StartCleanupCron(ctx context.Context, interval, ttl time.Dura
 
 }
 
+// DeleteDroplet destroys the droplet with the given name. Called by the
+// webhook handler when a workflow job reaches the "completed" state.
 func (d *DOClient) DeleteDroplet(ctx context.Context, runnerName string) error {
 	runnerID, err := d.getDropletId(ctx, runnerName)
 	if err != nil {
@@ -189,6 +216,9 @@ func (d *DOClient) DeleteDroplet(ctx context.Context, runnerName string) error {
 	return nil
 }
 
+// fetchSnapshot refreshes the in-memory snapshot cache from the DigitalOcean
+// API. It holds the write lock for the duration of the update so concurrent
+// label parsing sees a consistent snapshot list.
 func (d *DOClient) fetchSnapshot(ctx context.Context) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -204,6 +234,9 @@ func (d *DOClient) fetchSnapshot(ctx context.Context) error {
 	return nil
 }
 
+// StartSnapshotRefresher periodically refreshes the snapshot cache so that
+// newly published Packer images are picked up without a restart. Runs until
+// ctx is cancelled; call in a goroutine from main.
 func (d *DOClient) StartSnapshotRefresher(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 
@@ -221,6 +254,10 @@ func (d *DOClient) StartSnapshotRefresher(ctx context.Context, interval time.Dur
 	}
 }
 
+// parseLabels converts GitHub Actions runner labels of the form "key/value"
+// into a DropletConfig. Recognised keys: region, size, image (stock slug),
+// snapshot (Packer image name resolved against the cached snapshot list).
+// Missing region, size, or image fall back to documented defaults.
 func (d *DOClient) parseLabels(labels []string) (*DropletConfig, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()

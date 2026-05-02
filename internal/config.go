@@ -9,21 +9,27 @@ import (
 	"time"
 )
 
+// Config holds all runtime configuration loaded from environment variables.
+// Required variables cause a fatal log if absent; optional ones have documented
+// defaults.
 type Config struct {
-	WebHookSecret        string
-	Port                 string
-	GitHubAppID          int64
-	GitHubAppPrivateKey  string
-	GitHubInstallationID int64
-	GitHubRunnerGroupID  int64
-	GitHubRunnerLabels   []string
-	DOToken              string
-	DORunnerSnapshotID   *int
-	DORunnerImageSlug    *string
-	RunnerTTL            time.Duration
-	RunnerVersion        string
+	WebHookSecret        string        // WEB_HOOK_SECRET — GitHub webhook HMAC secret
+	Port                 string        // PORT (default: 8080)
+	GitHubAppID          int64         // GITHUB_APP_ID
+	GitHubAppPrivateKey  string        // GITHUB_APP_PRIVATE_KEY — PEM-encoded RSA key
+	GitHubInstallationID int64         // GITHUB_INSTALLATION_ID
+	GitHubRunnerGroupID  int64         // GITHUB_RUNNER_GROUP_ID (default: 1)
+	GitHubRunnerLabels   []string      // GITHUB_RUNNER_LABELS (default: self-hosted,linux,x64)
+	DOToken              string        // DO_TOKEN — DigitalOcean personal access token
+	DORunnerSnapshotID   *int          // DO_RUNNER_SNAPSHOT_ID (optional, mutually exclusive with DORunnerImageSlug)
+	DORunnerImageSlug    *string       // DO_RUNNER_IMAGE_SLUG (optional, mutually exclusive with DORunnerSnapshotID)
+	RunnerTTL            time.Duration // RUNNER_TTL (default: 1h) — max droplet lifetime before forced cleanup
+	RunnerVersion        string        // RUNNER_VERSION (default: 2.334.0) — actions/runner release to install
 }
 
+// LoadConfig reads all configuration from environment variables, applies
+// defaults for optional fields, and exits the process on any missing required
+// value or parse error.
 func LoadConfig() *Config {
 
 	must := func(key string) string {
@@ -112,6 +118,8 @@ func LoadConfig() *Config {
 	return cfg
 }
 
+// requireEnv returns the value of the named environment variable or an error
+// if it is unset or empty.
 func requireEnv(key string) (string, error) {
 	value := os.Getenv(key)
 	if value == "" {
