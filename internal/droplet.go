@@ -15,10 +15,10 @@ import (
 	"github.com/digitalocean/godo"
 )
 
-//go:embed  ../userdata/bootstrap_packer.sh
+//go:embed userdata/bootstrap-packer.sh
 var bootstrapPacker string
 
-//go:embed  ../userdata/bootstrap_stock.sh
+//go:embed userdata/bootstrap-stock.sh
 var bootstrapStock string
 
 type DOClient struct {
