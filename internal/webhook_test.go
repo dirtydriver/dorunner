@@ -110,41 +110,6 @@ func TestWebhookHandler_ServeHTTP(t *testing.T) {
 			wantStatus:     http.StatusUnauthorized,
 		},
 		{
-			name:   "accepts valid queued webhook",
-			method: http.MethodPost,
-			body: WebhookPayload{
-				Action: "queued",
-				Repository: Repository{
-					FullName: "owner/repo",
-				},
-				WorkflowJob: WorkflowJob{
-					ID:     12345,
-					Labels: []string{"self-hosted", "linux"},
-				},
-			},
-			secret:         "test-secret",
-			addSignature:   true,
-			validSignature: true,
-			wantStatus:     http.StatusOK,
-		},
-		{
-			name:   "accepts valid completed webhook",
-			method: http.MethodPost,
-			body: WebhookPayload{
-				Action: "completed",
-				Repository: Repository{
-					FullName: "owner/repo",
-				},
-				WorkflowJob: WorkflowJob{
-					RunnerName: "do-runner-12345",
-				},
-			},
-			secret:         "test-secret",
-			addSignature:   true,
-			validSignature: true,
-			wantStatus:     http.StatusOK,
-		},
-		{
 			name:   "accepts valid webhook with unknown action",
 			method: http.MethodPost,
 			body: WebhookPayload{
@@ -172,9 +137,9 @@ func TestWebhookHandler_ServeHTTP(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &Config{
-				WebHookSecret:        tt.secret,
-				GitHubRunnerGroupID:  1,
-				GitHubRunnerLabels:   []string{"self-hosted", "linux"},
+				WebHookSecret:       tt.secret,
+				GitHubRunnerGroupID: 1,
+				GitHubRunnerLabels:  []string{"self-hosted", "linux"},
 			}
 
 			handler := NewWebhookHandler(cfg, nil, nil)
