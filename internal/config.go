@@ -21,8 +21,6 @@ type Config struct {
 	GitHubRunnerGroupID  int64         // GITHUB_RUNNER_GROUP_ID (default: 1)
 	GitHubRunnerLabels   []string      // GITHUB_RUNNER_LABELS (default: self-hosted,linux,x64)
 	DOToken              string        // DO_TOKEN — DigitalOcean personal access token
-	DORunnerSnapshotID   *int          // DO_RUNNER_SNAPSHOT_ID (optional, mutually exclusive with DORunnerImageSlug)
-	DORunnerImageSlug    *string       // DO_RUNNER_IMAGE_SLUG (optional, mutually exclusive with DORunnerSnapshotID)
 	RunnerTTL            time.Duration // RUNNER_TTL (default: 1h) — max droplet lifetime before forced cleanup
 	RunnerVersion        string        // RUNNER_VERSION (default: 2.334.0) — actions/runner release to install
 }
@@ -68,22 +66,6 @@ func LoadConfig() *Config {
 		log.Fatalf("Failed to parse RUNNER_TTL: %v", err)
 	}
 
-	dorunnerSnapshotIDStr := optional("DO_RUNNER_SNAPSHOT_ID", "")
-	var dorunnerSnapshotID *int
-	if dorunnerSnapshotIDStr != "" {
-		snapshotID, err := strconv.Atoi(dorunnerSnapshotIDStr)
-		if err != nil {
-			log.Fatalf("Failed to parse DO_RUNNER_SNAPSHOT_ID: %v", err)
-		}
-		dorunnerSnapshotID = &snapshotID
-	}
-
-	dorunnerImageSlug := os.Getenv("DO_RUNNER_IMAGE_SLUG")
-	var dorunnerImageSlugPtr *string
-	if dorunnerImageSlug != "" {
-		dorunnerImageSlugPtr = &dorunnerImageSlug
-	}
-
 	rawLabels := strings.Split(optional("GITHUB_RUNNER_LABELS", "self-hosted,linux,x64"), ",")
 
 	labels := make([]string, len(rawLabels))
@@ -105,14 +87,8 @@ func LoadConfig() *Config {
 		GitHubRunnerGroupID:  groupid,
 		GitHubRunnerLabels:   labels,
 		DOToken:              must("DO_TOKEN"),
-		DORunnerSnapshotID:   dorunnerSnapshotID,
-		DORunnerImageSlug:    dorunnerImageSlugPtr,
 		RunnerTTL:            runnerTTL,
 		RunnerVersion:        optional("RUNNER_VERSION", "2.334.0"),
-	}
-
-	if cfg.DORunnerSnapshotID == nil && cfg.DORunnerImageSlug == nil {
-		log.Fatalf("Either DO_RUNNER_SNAPSHOT_ID or DO_RUNNER_IMAGE_SLUG must be set")
 	}
 
 	return cfg

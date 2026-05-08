@@ -61,7 +61,6 @@ func TestLoadConfig_Success(t *testing.T) {
 		os.Setenv("GITHUB_APP_PRIVATE_KEY", "test-private-key")
 		os.Setenv("GITHUB_INSTALLATION_ID", "67890")
 		os.Setenv("DO_TOKEN", "test-do-token")
-		os.Setenv("DO_RUNNER_SNAPSHOT_ID", "123456")
 	}
 
 	clearEnvVars := func() {
@@ -73,8 +72,6 @@ func TestLoadConfig_Success(t *testing.T) {
 		os.Unsetenv("GITHUB_RUNNER_GROUP_ID")
 		os.Unsetenv("GITHUB_RUNNER_LABELS")
 		os.Unsetenv("DO_TOKEN")
-		os.Unsetenv("DO_RUNNER_SNAPSHOT_ID")
-		os.Unsetenv("DO_RUNNER_IMAGE_SLUG")
 		os.Unsetenv("RUNNER_TTL")
 		os.Unsetenv("RUNNER_VERSION")
 	}
@@ -113,12 +110,6 @@ func TestLoadConfig_Success(t *testing.T) {
 		if cfg.DOToken != "test-do-token" {
 			t.Errorf("DOToken = %v, want test-do-token", cfg.DOToken)
 		}
-		if cfg.DORunnerSnapshotID == nil || *cfg.DORunnerSnapshotID != 123456 {
-			t.Errorf("DORunnerSnapshotID = %v, want 123456", cfg.DORunnerSnapshotID)
-		}
-		if cfg.DORunnerImageSlug != nil {
-			t.Errorf("DORunnerImageSlug = %v, want nil", cfg.DORunnerImageSlug)
-		}
 		if cfg.RunnerTTL != time.Hour {
 			t.Errorf("RunnerTTL = %v, want 1h", cfg.RunnerTTL)
 		}
@@ -156,23 +147,6 @@ func TestLoadConfig_Success(t *testing.T) {
 		}
 		if cfg.RunnerVersion != "2.400.0" {
 			t.Errorf("RunnerVersion = %v, want 2.400.0", cfg.RunnerVersion)
-		}
-	})
-
-	t.Run("loads config with DO_RUNNER_IMAGE_SLUG instead of snapshot", func(t *testing.T) {
-		clearEnvVars()
-		setRequiredEnvVars()
-		os.Unsetenv("DO_RUNNER_SNAPSHOT_ID")
-		os.Setenv("DO_RUNNER_IMAGE_SLUG", "ubuntu-22-04-x64")
-		defer clearEnvVars()
-
-		cfg := LoadConfig()
-
-		if cfg.DORunnerSnapshotID != nil {
-			t.Errorf("DORunnerSnapshotID = %v, want nil", cfg.DORunnerSnapshotID)
-		}
-		if cfg.DORunnerImageSlug == nil || *cfg.DORunnerImageSlug != "ubuntu-22-04-x64" {
-			t.Errorf("DORunnerImageSlug = %v, want ubuntu-22-04-x64", cfg.DORunnerImageSlug)
 		}
 	})
 
