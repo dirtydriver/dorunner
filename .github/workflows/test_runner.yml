@@ -1,0 +1,13 @@
+name: Test Self-Hosted Runner
+on: workflow_dispatch
+jobs:
+  test:
+    runs-on:
+      - self-hosted
+      - linux
+      - size/s-1vcpu-2gb
+      - region/fra1
+      - image/ubuntu-22-04-x64
+    steps:
+      - run: echo "Hello from ephemeral runner!"
+      - run: uname -a
