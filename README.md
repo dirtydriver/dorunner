@@ -156,7 +156,7 @@ See the [Running](#running) section for deployment options.
 - Ensure the region/size/image labels are valid
 
 **Runner doesn't pick up jobs:**
-- Verify the base labels in `GITHUB_RUNNER_LABELS` (e.g. `self-hosted,linux,x64`) match the non-prefixed labels in your workflow's `runs-on`
+- Verify your workflow's `runs-on` labels match the runner configuration (labels come from the workflow_job webhook payload)
 - Check the runner appears in Settings → Actions → Runners (it should show briefly while the job runs)
 - Review dorunner logs for JIT config generation errors
 
@@ -171,7 +171,6 @@ All configuration is supplied via environment variables.
 | `GITHUB_APP_PRIVATE_KEY` | yes | — | PEM-encoded RSA private key for the App |
 | `GITHUB_INSTALLATION_ID` | yes | — | Installation ID of the App on your org/repo |
 | `GITHUB_RUNNER_GROUP_ID` | no | `1` | Runner group to register new runners into |
-| `GITHUB_RUNNER_LABELS` | no | `self-hosted,linux,x64` | Comma-separated labels applied to every runner |
 | `DO_TOKEN` | yes | — | DigitalOcean personal access token |
 | `RUNNER_TTL` | no | `1h` | Maximum Droplet lifetime; older Droplets are force-deleted |
 | `RUNNER_VERSION` | no | `2.334.0` | `actions/runner` release version to install on stock images |

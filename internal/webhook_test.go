@@ -139,7 +139,6 @@ func TestWebhookHandler_ServeHTTP(t *testing.T) {
 			cfg := &Config{
 				WebHookSecret:       tt.secret,
 				GitHubRunnerGroupID: 1,
-				GitHubRunnerLabels:  []string{"self-hosted", "linux"},
 			}
 
 			handler := NewWebhookHandler(cfg, nil, nil)

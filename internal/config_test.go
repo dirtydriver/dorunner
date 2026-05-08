@@ -70,7 +70,6 @@ func TestLoadConfig_Success(t *testing.T) {
 		os.Unsetenv("GITHUB_APP_PRIVATE_KEY")
 		os.Unsetenv("GITHUB_INSTALLATION_ID")
 		os.Unsetenv("GITHUB_RUNNER_GROUP_ID")
-		os.Unsetenv("GITHUB_RUNNER_LABELS")
 		os.Unsetenv("DO_TOKEN")
 		os.Unsetenv("RUNNER_TTL")
 		os.Unsetenv("RUNNER_VERSION")
@@ -101,12 +100,6 @@ func TestLoadConfig_Success(t *testing.T) {
 		if cfg.GitHubRunnerGroupID != 1 {
 			t.Errorf("GitHubRunnerGroupID = %v, want 1", cfg.GitHubRunnerGroupID)
 		}
-		if len(cfg.GitHubRunnerLabels) != 3 {
-			t.Errorf("GitHubRunnerLabels length = %v, want 3", len(cfg.GitHubRunnerLabels))
-		}
-		if cfg.GitHubRunnerLabels[0] != "self-hosted" || cfg.GitHubRunnerLabels[1] != "linux" || cfg.GitHubRunnerLabels[2] != "x64" {
-			t.Errorf("GitHubRunnerLabels = %v, want [self-hosted linux x64]", cfg.GitHubRunnerLabels)
-		}
 		if cfg.DOToken != "test-do-token" {
 			t.Errorf("DOToken = %v, want test-do-token", cfg.DOToken)
 		}
@@ -123,7 +116,6 @@ func TestLoadConfig_Success(t *testing.T) {
 		setRequiredEnvVars()
 		os.Setenv("PORT", "9090")
 		os.Setenv("GITHUB_RUNNER_GROUP_ID", "42")
-		os.Setenv("GITHUB_RUNNER_LABELS", "custom,labels,test")
 		os.Setenv("RUNNER_TTL", "2h30m")
 		os.Setenv("RUNNER_VERSION", "2.400.0")
 		defer clearEnvVars()
@@ -136,12 +128,6 @@ func TestLoadConfig_Success(t *testing.T) {
 		if cfg.GitHubRunnerGroupID != 42 {
 			t.Errorf("GitHubRunnerGroupID = %v, want 42", cfg.GitHubRunnerGroupID)
 		}
-		if len(cfg.GitHubRunnerLabels) != 3 {
-			t.Errorf("GitHubRunnerLabels length = %v, want 3", len(cfg.GitHubRunnerLabels))
-		}
-		if cfg.GitHubRunnerLabels[0] != "custom" || cfg.GitHubRunnerLabels[1] != "labels" || cfg.GitHubRunnerLabels[2] != "test" {
-			t.Errorf("GitHubRunnerLabels = %v, want [custom labels test]", cfg.GitHubRunnerLabels)
-		}
 		if cfg.RunnerTTL != 2*time.Hour+30*time.Minute {
 			t.Errorf("RunnerTTL = %v, want 2h30m", cfg.RunnerTTL)
 		}
@@ -150,16 +136,4 @@ func TestLoadConfig_Success(t *testing.T) {
 		}
 	})
 
-	t.Run("trims whitespace from runner labels", func(t *testing.T) {
-		clearEnvVars()
-		setRequiredEnvVars()
-		os.Setenv("GITHUB_RUNNER_LABELS", " label1 , label2 , label3 ")
-		defer clearEnvVars()
-
-		cfg := LoadConfig()
-
-		if cfg.GitHubRunnerLabels[0] != "label1" || cfg.GitHubRunnerLabels[1] != "label2" || cfg.GitHubRunnerLabels[2] != "label3" {
-			t.Errorf("GitHubRunnerLabels = %v, want [label1 label2 label3]", cfg.GitHubRunnerLabels)
-		}
-	})
 }
