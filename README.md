@@ -14,10 +14,151 @@ Self-hosted GitHub Actions runner controller that provisions ephemeral DigitalOc
 ## Prerequisites
 
 - A **GitHub App** installed on the target organisation or repository with permissions:
-  - `Actions` → Read & Write (to generate JIT configs)
-  - Subscribe to the `workflow_job` event
+  - `Administration` → Read & Write (to generate JIT runner configs)
 - A **DigitalOcean personal access token** with Droplet read/write scope.
 - A publicly reachable HTTPS endpoint to receive GitHub webhooks (e.g. behind a reverse proxy or load balancer).
+
+## Installation Guide
+
+### Step 1: Create a GitHub App
+
+1. Navigate to your GitHub organization or personal account settings
+2. Go to **Settings** → **Developer settings** → **GitHub Apps** → **New GitHub App**
+3. Fill in the required fields:
+   - **GitHub App name**: Choose a unique name (e.g., `dorunner-myorg`)
+   - **Homepage URL**: Your organization URL or repository URL
+   - **Webhook URL**: Leave empty (webhooks will be configured per-repository in Step 3.5)
+4. Set **Repository permissions**:
+   - **Administration**: Read & Write (required to generate JIT runner configs)
+5. **Do not** subscribe to any events in the App settings (webhooks are configured per-repository)
+6. Set **Where can this GitHub App be installed?**:
+   - Choose based on your needs (only this account or any account)
+7. Click **Create GitHub App**
+8. After creation, note down the **App ID** (this is your `GITHUB_APP_ID`)
+9. Generate a webhook secret and save it securely — this will be your `WEB_HOOK_SECRET`:
+   ```bash
+   openssl rand -hex 32
+   ```
+
+### Step 2: Generate GitHub App Private Key
+
+1. On your GitHub App's settings page, scroll to **Private keys**
+2. Click **Generate a private key**
+3. A `.pem` file will be downloaded — **save this securely and never commit it to git**
+4. Add `*.pem` to your `.gitignore` if storing locally
+5. The contents of this file will be your `GITHUB_APP_PRIVATE_KEY`
+
+**Note on PEM format**: When passing the private key as an environment variable, you need to preserve newlines:
+- In shell: `GITHUB_APP_PRIVATE_KEY="$(cat private-key.pem)"`
+- In Docker: Use `-e GITHUB_APP_PRIVATE_KEY="$(cat private-key.pem)"`
+- In DigitalOcean App Platform: Paste the raw PEM contents including `-----BEGIN RSA PRIVATE KEY-----` and `-----END RSA PRIVATE KEY-----` lines
+
+### Step 3: Install the GitHub App
+
+1. On your GitHub App's settings page, click **Install App** in the left sidebar
+2. Select the organization or account where you want to install it
+3. Choose **All repositories** or **Only select repositories** based on your needs
+4. Click **Install**
+5. After installation, note the installation ID from the URL:
+   - **Personal account**: `https://github.com/settings/installations/12345678`
+   - **Organization**: `https://github.com/organizations/your-org/settings/installations/12345678`
+   - The number `12345678` is your `GITHUB_INSTALLATION_ID`
+
+### Step 3.5: Configure Repository Webhook
+
+1. Navigate to the repository where you want to use self-hosted runners
+2. Go to **Settings** → **Webhooks** → **Add webhook**
+3. Configure the webhook:
+   - **Payload URL**: Your public dorunner endpoint (e.g., `https://dorunner.example.com/webhook`)
+   - **Content type**: `application/json`
+   - **Secret**: Paste the webhook secret you generated in Step 1 point 9 (your `WEB_HOOK_SECRET`)
+   - **Which events**: Select **Let me select individual events**, then check only **Workflow jobs**
+   - **Active**: ✅ Checked
+4. Click **Add webhook**
+5. Repeat for each repository that needs self-hosted runners
+
+### Step 4: Create DigitalOcean API Token
+
+1. Log in to your [DigitalOcean account](https://cloud.digitalocean.com/)
+2. Navigate to **API** in the left sidebar (or go to https://cloud.digitalocean.com/account/api/tokens)
+3. Click **Generate New Token**
+4. Set the token name (e.g., `dorunner-token`)
+5. Required scopes:
+   - **Droplets**: Create, Read, Delete
+   - **Snapshots**: Read
+6. Click **Generate Token**
+7. **Important**: Copy the token immediately and save it securely (this is your `DO_TOKEN`)
+   - You won't be able to see it again after leaving the page
+
+### Step 5: (Optional) Create Packer Snapshot
+
+If you want faster runner startup times, you can pre-build a DigitalOcean snapshot with the GitHub Actions runner pre-installed.
+
+1. Use [Packer](https://www.packer.io/) to build a custom image with the runner binaries at `/home/runner/actions-runner`
+2. After building, find the snapshot in DigitalOcean:
+   - Navigate to **Images** → **Snapshots**
+   - Note the snapshot name (this will be used with the `snapshot/<name>` label)
+   - The snapshot ID will be automatically resolved by dorunner
+
+Alternatively, skip this step and use stock DigitalOcean images (slower startup but no pre-building required).
+
+### Step 6: Deploy dorunner
+
+Choose one of the deployment methods below and configure the environment variables from the previous steps.
+
+**Required environment variables:**
+```bash
+WEB_HOOK_SECRET=<random-secret-generated-in-step-1-point-9>
+GITHUB_APP_ID=<your-app-id-from-step-1>
+GITHUB_APP_PRIVATE_KEY=<contents-of-pem-file-from-step-2>
+GITHUB_INSTALLATION_ID=<installation-id-from-step-3>
+DO_TOKEN=<your-do-token-from-step-4>
+```
+
+See the [Running](#running) section for deployment options.
+
+### Step 7: Test the Setup
+
+1. Create a test workflow in your repository:
+   ```yaml
+   name: Test Self-Hosted Runner
+   on: [push]
+   jobs:
+     test:
+       runs-on:
+         - self-hosted
+         - linux
+         - size/s-1vcpu-2gb
+         - region/fra1
+         - image/ubuntu-22-04-x64
+       steps:
+         - run: echo "Hello from ephemeral runner!"
+         - run: uname -a
+   ```
+
+2. Push the workflow and check:
+   - GitHub Actions tab shows the job as queued
+   - dorunner logs show it received the webhook
+   - A new Droplet appears in your DigitalOcean dashboard with tag `github-runner`
+   - The job executes successfully
+   - The Droplet is automatically deleted after completion
+
+### Troubleshooting
+
+**Webhook not received:**
+- Verify the webhook URL is publicly accessible
+- Check webhook deliveries in your repository: Settings → Webhooks → Recent Deliveries
+- Ensure `X-Hub-Signature-256` validation is passing
+
+**Droplet creation fails:**
+- Verify `DO_TOKEN` has write permissions
+- Check DigitalOcean API rate limits
+- Ensure the region/size/image labels are valid
+
+**Runner doesn't pick up jobs:**
+- Verify the base labels in `GITHUB_RUNNER_LABELS` (e.g. `self-hosted,linux,x64`) match the non-prefixed labels in your workflow's `runs-on`
+- Check the runner appears in Settings → Actions → Runners (it should show briefly while the job runs)
+- Review dorunner logs for JIT config generation errors
 
 ## Configuration
 
@@ -32,13 +173,9 @@ All configuration is supplied via environment variables.
 | `GITHUB_RUNNER_GROUP_ID` | no | `1` | Runner group to register new runners into |
 | `GITHUB_RUNNER_LABELS` | no | `self-hosted,linux,x64` | Comma-separated labels applied to every runner |
 | `DO_TOKEN` | yes | — | DigitalOcean personal access token |
-| `DO_RUNNER_SNAPSHOT_ID` | yes* | — | Snapshot ID to use for Packer-built images |
-| `DO_RUNNER_IMAGE_SLUG` | yes* | — | DigitalOcean image slug for stock images |
 | `RUNNER_TTL` | no | `1h` | Maximum Droplet lifetime; older Droplets are force-deleted |
 | `RUNNER_VERSION` | no | `2.334.0` | `actions/runner` release version to install on stock images |
 | `PORT` | no | `8080` | HTTP port to listen on |
-
-\* At least one of `DO_RUNNER_SNAPSHOT_ID` or `DO_RUNNER_IMAGE_SLUG` must be set.
 
 ## Runner labels
 
@@ -106,10 +243,11 @@ docker run -d \
   -e GITHUB_APP_PRIVATE_KEY="$(cat private-key.pem)" \
   -e GITHUB_INSTALLATION_ID=... \
   -e DO_TOKEN=... \
-  -e DO_RUNNER_IMAGE_SLUG=ubuntu-22-04-x64 \
   -p 8080:8080 \
-  ghcr.io/dirtydriver/dorunner:latest
+  ghcr.io/dirtydriver/dorunner:v1.0.0
 ```
+
+**Note**: Replace `v1.0.0` with the specific version you want to use. Check [releases](https://github.com/dirtydriver/dorunner/releases) for available versions.
 
 Or build locally:
 
@@ -122,19 +260,41 @@ docker run -d \
   -e GITHUB_APP_PRIVATE_KEY="$(cat private-key.pem)" \
   -e GITHUB_INSTALLATION_ID=... \
   -e DO_TOKEN=... \
-  -e DO_RUNNER_IMAGE_SLUG=ubuntu-22-04-x64 \
   -p 8080:8080 \
   dorunner
 ```
 
 The image is built on `gcr.io/distroless/base:nonroot` — it contains only the statically linked binary and runs as a non-root user.
 
+### DigitalOcean App Platform (recommended)
+
+The easiest way to deploy dorunner is via DigitalOcean App Platform:
+
+1. Fork or push this repository to GitHub
+2. Go to [DigitalOcean App Platform](https://cloud.digitalocean.com/apps) → **Create App**
+3. Connect your GitHub repository
+4. Set the component type to **Web Service**
+5. Add all required environment variables as **encrypted secrets**
+6. Deploy — App Platform will build from the Dockerfile automatically
+7. Copy the public URL (e.g. `https://dorunner-xxxxx.ondigitalocean.app`) — use this as your webhook Payload URL in Step 3.5
+8. Go back to **Step 3.5** and update the webhook **Payload URL** with your App Platform URL:
+   ```
+   https://dorunner-xxxxx.ondigitalocean.app/webhook
+   ```
+   If you already created the webhook with a placeholder URL, edit it:
+   **Settings → Webhooks → your webhook → Edit** and update the Payload URL.
+
+Every push to `main` triggers an automatic redeploy with zero downtime. **Note**: Your App Platform URL is stable and won't change on redeployments — you only need to update the webhook URL if you delete and recreate the app.
+
 ### Local
+
+Copy `.env.example` to `.env` and fill in your values, then:
 
 ```bash
 go build -o dorunner .
-export WEB_HOOK_SECRET=...
-# set remaining env vars
+cp .env.example .env
+# edit .env with your values
+export $(cat .env | xargs)
 ./dorunner
 ```
 
@@ -144,4 +304,4 @@ export WEB_HOOK_SECRET=...
 POST /webhook
 ```
 
-dorunner validates the `X-Hub-Signature-256` header on every request. Configure this URL as the webhook endpoint in your GitHub App settings, selecting the `workflow_job` event.
+dorunner validates the `X-Hub-Signature-256` header on every request. Configure this URL as the webhook endpoint in your repository settings (see Step 3.5 in the Installation Guide).
