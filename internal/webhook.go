@@ -51,6 +51,7 @@ func NewWebhookHandler(cfg *Config, do *DOClient, github *GitHubClient) *Webhook
 		github: github,
 	}
 }
+
 // ServeHTTP validates the HMAC-SHA256 signature on the incoming request, then
 // dispatches the event asynchronously:
 //   - "queued"    → fetch JIT config from GitHub, create a new droplet
@@ -102,7 +103,7 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 			runnerName := fmt.Sprintf("do-runner-%d", payLoad.WorkflowJob.ID)
 			log.Printf("Runner name: %s", runnerName)
-			jitConfig, err := h.github.FetchJITConfig(ctx, repoOwner, repoName, runnerName, h.cfg.GitHubRunnerGroupID, h.cfg.GitHubRunnerLabels)
+			jitConfig, err := h.github.FetchJITConfig(ctx, repoOwner, repoName, runnerName, h.cfg.GitHubRunnerGroupID, payLoad.WorkflowJob.Labels)
 			if err != nil {
 				log.Printf("failed to fetch JIT config: %v", err)
 				return

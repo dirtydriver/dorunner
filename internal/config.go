@@ -5,7 +5,6 @@ import (
 	"log"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -19,7 +18,6 @@ type Config struct {
 	GitHubAppPrivateKey  string        // GITHUB_APP_PRIVATE_KEY — PEM-encoded RSA key
 	GitHubInstallationID int64         // GITHUB_INSTALLATION_ID
 	GitHubRunnerGroupID  int64         // GITHUB_RUNNER_GROUP_ID (default: 1)
-	GitHubRunnerLabels   []string      // GITHUB_RUNNER_LABELS (default: self-hosted,linux,x64)
 	DOToken              string        // DO_TOKEN — DigitalOcean personal access token
 	RunnerTTL            time.Duration // RUNNER_TTL (default: 1h) — max droplet lifetime before forced cleanup
 	RunnerVersion        string        // RUNNER_VERSION (default: 2.334.0) — actions/runner release to install
@@ -66,18 +64,6 @@ func LoadConfig() *Config {
 		log.Fatalf("Failed to parse RUNNER_TTL: %v", err)
 	}
 
-	rawLabels := strings.Split(optional("GITHUB_RUNNER_LABELS", "self-hosted,linux,x64"), ",")
-
-	labels := make([]string, len(rawLabels))
-
-	for i, label := range rawLabels {
-		labels[i] = strings.TrimSpace(label)
-	}
-
-	if len(labels) == 0 || len(labels) == 1 && labels[0] == "" {
-		log.Fatalf("GITHUB_RUNNER_LABELS must not be empty")
-	}
-
 	cfg := &Config{
 		WebHookSecret:        must("WEB_HOOK_SECRET"),
 		Port:                 optional("PORT", "8080"),
@@ -85,7 +71,6 @@ func LoadConfig() *Config {
 		GitHubAppPrivateKey:  must("GITHUB_APP_PRIVATE_KEY"),
 		GitHubInstallationID: installationID,
 		GitHubRunnerGroupID:  groupid,
-		GitHubRunnerLabels:   labels,
 		DOToken:              must("DO_TOKEN"),
 		RunnerTTL:            runnerTTL,
 		RunnerVersion:        optional("RUNNER_VERSION", "2.334.0"),
