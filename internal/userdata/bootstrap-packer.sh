@@ -4,5 +4,6 @@ set -e
 JIT_CONFIG="{{ .JITConfig }}"
 
 cd /home/runner/actions-runner
-sudo -u runner ./config.sh --jitconfig "$JIT_CONFIG" --unattended
-sudo -u runner ./run.sh
+
+export ACTIONS_RUNNER_INPUT_JITCONFIG="$JIT_CONFIG"
+sudo -u runner --preserve-env=ACTIONS_RUNNER_INPUT_JITCONFIG /home/runner/actions-runner/run.sh
