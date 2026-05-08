@@ -100,7 +100,11 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ctx := context.Background()
 		switch payLoad.Action {
 		case "queued":
-
+			// ignore jobs that don't need a self-hosted runner
+			if !containsLabel(payLoad.WorkflowJob.Labels, "self-hosted") {
+				log.Printf("job %d is not for a self-hosted runner, ignoring", payLoad.WorkflowJob.ID)
+				return
+			}
 			runnerName := fmt.Sprintf("do-runner-%d", payLoad.WorkflowJob.ID)
 			log.Printf("Runner name: %s", runnerName)
 			jitConfig, err := h.github.FetchJITConfig(ctx, repoOwner, repoName, runnerName, h.cfg.GitHubRunnerGroupID, payLoad.WorkflowJob.Labels)
@@ -116,6 +120,9 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		case "completed":
 			runnerName := payLoad.WorkflowJob.RunnerName
+			if runnerName == "" || !strings.HasPrefix(runnerName, "do-runner-") {
+				return
+			}
 			err := h.do.DeleteDroplet(ctx, runnerName)
 			if err != nil {
 				log.Printf("failed to delete droplet: %v", err)
@@ -127,6 +134,14 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+}
+func containsLabel(labels []string, label string) bool {
+	for _, l := range labels {
+		if l == label {
+			return true
+		}
+	}
+	return false
 }
 
 // verifySignature checks that signature matches the HMAC-SHA256 of body using
