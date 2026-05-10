@@ -55,6 +55,8 @@ func NewWebhookHandler(cfg *Config, do *DOClient, github *GitHubClient) *Webhook
 	}
 }
 
+// Wait blocks until all in-flight webhook goroutines have finished. Called
+// during graceful shutdown after the HTTP server stops accepting requests.
 func (h *WebhookHandler) Wait() {
 	h.wg.Wait()
 }
@@ -154,6 +156,7 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 
 }
+// containsLabel reports whether label appears in labels.
 func containsLabel(labels []string, label string) bool {
 	for _, l := range labels {
 		if l == label {
