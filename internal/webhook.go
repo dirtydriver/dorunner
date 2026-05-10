@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -41,6 +42,7 @@ type WebhookHandler struct {
 	cfg    *Config
 	do     *DOClient
 	github *GitHubClient
+	wg     sync.WaitGroup
 }
 
 // NewWebhookHandler wires together the config, DigitalOcean client, and GitHub
@@ -51,6 +53,10 @@ func NewWebhookHandler(cfg *Config, do *DOClient, github *GitHubClient) *Webhook
 		do:     do,
 		github: github,
 	}
+}
+
+func (h *WebhookHandler) Wait() {
+	h.wg.Wait()
 }
 
 // ServeHTTP validates the HMAC-SHA256 signature on the incoming request, then
@@ -95,14 +101,16 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 
+	h.wg.Add(1)
 	go func() {
+		defer h.wg.Done()
 		parts := strings.SplitN(payLoad.Repository.FullName, "/", 2)
 		repoOwner, repoName := parts[0], parts[1]
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
 
 		switch payLoad.Action {
 		case "queued":
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
 			// ignore jobs that don't need a self-hosted runner
 			if !containsLabel(payLoad.WorkflowJob.Labels, "self-hosted") {
 				log.Printf("job %d is not for a self-hosted runner, ignoring", payLoad.WorkflowJob.ID)
@@ -125,11 +133,14 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			log.Printf("[%s] droplet created successfully", runnerName)
 
 		case "completed":
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
 			runnerName := payLoad.WorkflowJob.RunnerName
 			if runnerName == "" || !strings.HasPrefix(runnerName, "do-runner-") {
 				log.Printf("job %d completed on non-dorunner runner, skipping", payLoad.WorkflowJob.ID)
 				return
 			}
+			log.Printf("[%s] completed — deleting droplet", runnerName)
 			err := h.do.DeleteDroplet(ctx, runnerName)
 			if err != nil {
 				log.Printf("[%s] failed to delete droplet: %v", runnerName, err)
