@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
 	"log"
 	"strconv"
@@ -93,14 +94,37 @@ func (d *DOClient) CreateDroplet(ctx context.Context, runnerName string, jitConf
 	if err != nil {
 		return fmt.Errorf("failed to render user data: %w", err)
 	}
-	_, _, err = d.client.Droplets.Create(ctx, &godo.DropletCreateRequest{
-		Name:     runnerName,
-		Region:   cfg.Region,
-		Size:     cfg.Size,
-		Image:    cfg.Image,
-		Tags:     []string{"github-runner"},
-		UserData: userData,
-	})
+	for attempt := 1; attempt <= 3; attempt++ {
+		_, _, err = d.client.Droplets.Create(ctx, &godo.DropletCreateRequest{
+			Name:     runnerName,
+			Region:   cfg.Region,
+			Size:     cfg.Size,
+			Image:    cfg.Image,
+			Tags:     []string{"github-runner"},
+			UserData: userData,
+		})
+		if err == nil {
+			break
+		}
+		// check if error is retryable
+		var errResp *godo.ErrorResponse
+		if errors.As(err, &errResp) {
+			if errResp.Response.StatusCode < 500 && errResp.Response.StatusCode != 429 {
+				// permanent error — no point retrying
+				return fmt.Errorf("failed to create droplet (permanent error): %w", err)
+			}
+		}
+
+		log.Printf("attempt %d failed: %v, retrying...", attempt, err)
+
+		select {
+		case <-time.After(time.Duration(attempt) * 5 * time.Second):
+		case <-ctx.Done():
+			return fmt.Errorf("context cancelled during retry: %w", ctx.Err())
+		}
+
+	}
+
 	if err != nil {
 		return fmt.Errorf("failed to create droplet: %w", err)
 	}
