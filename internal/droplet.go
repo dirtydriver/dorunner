@@ -133,7 +133,7 @@ func (d *DOClient) getDropletId(ctx context.Context, runnerName string) (int, er
 	}
 
 	if len(id) == 0 {
-		return 0, fmt.Errorf("droplet %s not found", runnerName)
+		return 0, nil
 	}
 
 	return id[0].ID, nil
@@ -208,6 +208,10 @@ func (d *DOClient) DeleteDroplet(ctx context.Context, runnerName string) error {
 	runnerID, err := d.getDropletId(ctx, runnerName)
 	if err != nil {
 		return fmt.Errorf("failed to get droplet id for %s: %w", runnerName, err)
+	}
+	if runnerID == 0 {
+		log.Printf("droplet %s already deleted, skipping", runnerName)
+		return nil
 	}
 	_, err = d.client.Droplets.Delete(ctx, runnerID)
 	if err != nil {
