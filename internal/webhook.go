@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // WebhookPayload is the subset of the GitHub workflow_job webhook event body
@@ -97,7 +98,9 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		parts := strings.SplitN(payLoad.Repository.FullName, "/", 2)
 		repoOwner, repoName := parts[0], parts[1]
-		ctx := context.Background()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
 		switch payLoad.Action {
 		case "queued":
 			// ignore jobs that don't need a self-hosted runner
