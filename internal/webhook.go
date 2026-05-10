@@ -106,28 +106,33 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			runnerName := fmt.Sprintf("do-runner-%d", payLoad.WorkflowJob.ID)
-			log.Printf("Runner name: %s", runnerName)
+			log.Printf("[%s] queued — fetching JIT config", runnerName)
 			jitConfig, err := h.github.FetchJITConfig(ctx, repoOwner, repoName, runnerName, h.cfg.GitHubRunnerGroupID, payLoad.WorkflowJob.Labels)
 			if err != nil {
 				log.Printf("failed to fetch JIT config: %v", err)
 				return
 			}
+			log.Printf("[%s] JIT config fetched — creating droplet", runnerName)
+
 			err = h.do.CreateDroplet(ctx, runnerName, jitConfig, payLoad.WorkflowJob.Labels)
 			if err != nil {
 				log.Printf("failed to create droplet: %v", err)
 				return
 			}
+			log.Printf("[%s] droplet created successfully", runnerName)
 
 		case "completed":
 			runnerName := payLoad.WorkflowJob.RunnerName
 			if runnerName == "" || !strings.HasPrefix(runnerName, "do-runner-") {
+				log.Printf("job %d completed on non-dorunner runner, skipping", payLoad.WorkflowJob.ID)
 				return
 			}
 			err := h.do.DeleteDroplet(ctx, runnerName)
 			if err != nil {
-				log.Printf("failed to delete droplet: %v", err)
+				log.Printf("[%s] failed to delete droplet: %v", runnerName, err)
 				return
 			}
+			log.Printf("[%s] droplet deleted successfully", runnerName)
 
 		default:
 			return
