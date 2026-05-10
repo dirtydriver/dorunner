@@ -2,6 +2,10 @@ package internal
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -227,6 +231,110 @@ func TestParseLabels(t *testing.T) {
 			}
 		})
 	}
+}
+
+func newTestDOClient(t *testing.T, handler http.HandlerFunc) (*DOClient, *httptest.Server) {
+	t.Helper()
+	srv := httptest.NewServer(handler)
+	gc := godo.NewFromToken("fake-token")
+	gc.BaseURL, _ = url.Parse(srv.URL + "/")
+	return &DOClient{client: gc}, srv
+}
+
+func TestGetDropletId(t *testing.T) {
+	tests := []struct {
+		name       string
+		response   string
+		statusCode int
+		wantID     int
+		wantErr    bool
+	}{
+		{
+			name:       "returns ID when droplet exists",
+			response:   `{"droplets": [{"id": 42, "name": "runner-123"}]}`,
+			statusCode: http.StatusOK,
+			wantID:     42,
+		},
+		{
+			name:       "returns 0 nil when droplet not found",
+			response:   `{"droplets": []}`,
+			statusCode: http.StatusOK,
+			wantID:     0,
+		},
+		{
+			name:       "returns error on API failure",
+			response:   `{"id": "server_error", "message": "internal"}`,
+			statusCode: http.StatusInternalServerError,
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, srv := newTestDOClient(t, func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.statusCode)
+				fmt.Fprintln(w, tt.response)
+			})
+			defer srv.Close()
+
+			id, err := client.getDropletId(context.Background(), "runner-123")
+			if (err != nil) != tt.wantErr {
+				t.Errorf("getDropletId() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if id != tt.wantID {
+				t.Errorf("getDropletId() = %d, want %d", id, tt.wantID)
+			}
+		})
+	}
+}
+
+func TestDeleteDroplet(t *testing.T) {
+	t.Run("skips without error when droplet already gone", func(t *testing.T) {
+		client, srv := newTestDOClient(t, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintln(w, `{"droplets": []}`)
+		})
+		defer srv.Close()
+
+		if err := client.DeleteDroplet(context.Background(), "runner-gone"); err != nil {
+			t.Errorf("DeleteDroplet() unexpected error for already-gone droplet: %v", err)
+		}
+	})
+
+	t.Run("deletes droplet when found", func(t *testing.T) {
+		deleted := false
+		client, srv := newTestDOClient(t, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			if r.Method == http.MethodDelete {
+				deleted = true
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			fmt.Fprintln(w, `{"droplets": [{"id": 42, "name": "runner-123"}]}`)
+		})
+		defer srv.Close()
+
+		if err := client.DeleteDroplet(context.Background(), "runner-123"); err != nil {
+			t.Errorf("DeleteDroplet() unexpected error: %v", err)
+		}
+		if !deleted {
+			t.Error("DeleteDroplet() did not call the delete API")
+		}
+	})
+
+	t.Run("returns error on list API failure", func(t *testing.T) {
+		client, srv := newTestDOClient(t, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintln(w, `{"id":"server_error","message":"internal"}`)
+		})
+		defer srv.Close()
+
+		if err := client.DeleteDroplet(context.Background(), "runner-123"); err == nil {
+			t.Error("DeleteDroplet() expected error on API failure, got nil")
+		}
+	})
 }
 
 func TestStartCleanupCron(t *testing.T) {

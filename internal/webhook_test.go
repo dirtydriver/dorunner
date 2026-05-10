@@ -132,6 +132,38 @@ func TestWebhookHandler_ServeHTTP(t *testing.T) {
 			validSignature: true,
 			wantStatus:     http.StatusInternalServerError,
 		},
+		{
+			name: "queued ignores job without self-hosted label",
+			method: http.MethodPost,
+			body: WebhookPayload{
+				Action:     "queued",
+				Repository: Repository{FullName: "owner/repo"},
+				WorkflowJob: WorkflowJob{
+					ID:     999,
+					Labels: []string{"ubuntu-latest"},
+				},
+			},
+			secret:         "test-secret",
+			addSignature:   true,
+			validSignature: true,
+			wantStatus:     http.StatusOK,
+		},
+		{
+			name: "completed skips non-dorunner runner",
+			method: http.MethodPost,
+			body: WebhookPayload{
+				Action:     "completed",
+				Repository: Repository{FullName: "owner/repo"},
+				WorkflowJob: WorkflowJob{
+					ID:         888,
+					RunnerName: "github-hosted-runner",
+				},
+			},
+			secret:         "test-secret",
+			addSignature:   true,
+			validSignature: true,
+			wantStatus:     http.StatusOK,
+		},
 	}
 
 	for _, tt := range tests {
@@ -164,6 +196,7 @@ func TestWebhookHandler_ServeHTTP(t *testing.T) {
 
 			rr := httptest.NewRecorder()
 			handler.ServeHTTP(rr, req)
+			handler.Wait()
 
 			if rr.Code != tt.wantStatus {
 				t.Errorf("ServeHTTP() status = %v, want %v", rr.Code, tt.wantStatus)
@@ -187,6 +220,29 @@ func TestNewWebhookHandler(t *testing.T) {
 			t.Error("NewWebhookHandler() cfg not set correctly")
 		}
 	})
+}
+
+func TestContainsLabel(t *testing.T) {
+	tests := []struct {
+		name   string
+		labels []string
+		label  string
+		want   bool
+	}{
+		{"found in list", []string{"self-hosted", "linux", "x64"}, "self-hosted", true},
+		{"not found in list", []string{"linux", "x64"}, "self-hosted", false},
+		{"empty labels", nil, "self-hosted", false},
+		{"empty search label", []string{"self-hosted"}, "", false},
+		{"exact match required", []string{"self-hosted-runner"}, "self-hosted", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := containsLabel(tt.labels, tt.label); got != tt.want {
+				t.Errorf("containsLabel(%v, %q) = %v, want %v", tt.labels, tt.label, got, tt.want)
+			}
+		})
+	}
 }
 
 func TestWebhookPayload_Unmarshal(t *testing.T) {

@@ -11,6 +11,8 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 )
 
 // WebhookPayload is the subset of the GitHub workflow_job webhook event body
@@ -40,6 +42,7 @@ type WebhookHandler struct {
 	cfg    *Config
 	do     *DOClient
 	github *GitHubClient
+	wg     sync.WaitGroup
 }
 
 // NewWebhookHandler wires together the config, DigitalOcean client, and GitHub
@@ -50,6 +53,12 @@ func NewWebhookHandler(cfg *Config, do *DOClient, github *GitHubClient) *Webhook
 		do:     do,
 		github: github,
 	}
+}
+
+// Wait blocks until all in-flight webhook goroutines have finished. Called
+// during graceful shutdown after the HTTP server stops accepting requests.
+func (h *WebhookHandler) Wait() {
+	h.wg.Wait()
 }
 
 // ServeHTTP validates the HMAC-SHA256 signature on the incoming request, then
@@ -94,40 +103,52 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 
+	h.wg.Add(1)
 	go func() {
+		defer h.wg.Done()
 		parts := strings.SplitN(payLoad.Repository.FullName, "/", 2)
 		repoOwner, repoName := parts[0], parts[1]
-		ctx := context.Background()
+
 		switch payLoad.Action {
 		case "queued":
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
 			// ignore jobs that don't need a self-hosted runner
 			if !containsLabel(payLoad.WorkflowJob.Labels, "self-hosted") {
 				log.Printf("job %d is not for a self-hosted runner, ignoring", payLoad.WorkflowJob.ID)
 				return
 			}
 			runnerName := fmt.Sprintf("do-runner-%d", payLoad.WorkflowJob.ID)
-			log.Printf("Runner name: %s", runnerName)
+			log.Printf("[%s] queued — fetching JIT config", runnerName)
 			jitConfig, err := h.github.FetchJITConfig(ctx, repoOwner, repoName, runnerName, h.cfg.GitHubRunnerGroupID, payLoad.WorkflowJob.Labels)
 			if err != nil {
 				log.Printf("failed to fetch JIT config: %v", err)
 				return
 			}
+			log.Printf("[%s] JIT config fetched — creating droplet", runnerName)
+
 			err = h.do.CreateDroplet(ctx, runnerName, jitConfig, payLoad.WorkflowJob.Labels)
 			if err != nil {
 				log.Printf("failed to create droplet: %v", err)
 				return
 			}
+			log.Printf("[%s] droplet created successfully", runnerName)
 
 		case "completed":
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
 			runnerName := payLoad.WorkflowJob.RunnerName
 			if runnerName == "" || !strings.HasPrefix(runnerName, "do-runner-") {
+				log.Printf("job %d completed on non-dorunner runner, skipping", payLoad.WorkflowJob.ID)
 				return
 			}
+			log.Printf("[%s] completed — deleting droplet", runnerName)
 			err := h.do.DeleteDroplet(ctx, runnerName)
 			if err != nil {
-				log.Printf("failed to delete droplet: %v", err)
+				log.Printf("[%s] failed to delete droplet: %v", runnerName, err)
 				return
 			}
+			log.Printf("[%s] droplet deleted successfully", runnerName)
 
 		default:
 			return
@@ -135,6 +156,7 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 
 }
+// containsLabel reports whether label appears in labels.
 func containsLabel(labels []string, label string) bool {
 	for _, l := range labels {
 		if l == label {
