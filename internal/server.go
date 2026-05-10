@@ -11,6 +11,10 @@ func StartServer(cfg *Config, wbh *WebhookHandler) {
 
 	mux := http.NewServeMux()
 	mux.Handle("/webhook", wbh)
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
 	err := http.ListenAndServe(":"+cfg.Port, mux)
 	if err != nil {
 		log.Fatalf("server stopped: %v", err)
