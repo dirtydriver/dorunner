@@ -11,6 +11,10 @@ useradd -m -s /bin/bash runner
 sudo -u runner mkdir -p /home/runner/actions-runner
 cd /home/runner/actions-runner
 
+# allow runner user to use sudo without password
+echo "runner ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/runner
+chmod 440 /etc/sudoers.d/runner
+
 # Download and extract
 sudo -u runner curl -o actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz -L \
   https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz
