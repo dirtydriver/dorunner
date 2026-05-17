@@ -217,6 +217,104 @@ Used when the Droplet is created from a plain OS image. The bootstrap script:
 
 Used when the Droplet is created from a pre-baked Packer snapshot that already has the runner binaries installed at `/home/runner/actions-runner`. The bootstrap script only registers and starts the runner — no download step needed, so startup is faster.
 
+## Building Custom Snapshots with Packer
+
+The `packer/` directory contains a Packer configuration for building pre-configured DigitalOcean snapshots with GitHub Actions runner binaries and common CI/CD tools pre-installed. Using snapshots significantly reduces Droplet startup time compared to stock images.
+
+### What's Included in the Snapshot
+
+The Packer build creates a snapshot with:
+
+- **GitHub Actions runner** binaries (version configurable via `runner_version` variable)
+- **System packages**: `build-essential`, `jq`, `yq`, `jc`, `python3.12-venv`, `unzip`
+- **AWS CLI v2** (commonly used in CI/CD workflows)
+- **Runner user** with passwordless sudo access
+- **Runner dependencies** (dotnet, libicu, etc.) pre-installed
+
+The snapshot does **not** include runner configuration — JIT tokens are injected at Droplet creation time via cloud-init.
+
+### Packer Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `do_token` | `$DIGITALOCEAN_TOKEN` | DigitalOcean API token (required) |
+| `region` | `fra1` | Region where the build Droplet will be created |
+| `droplet_size` | `s-1vcpu-1gb` | Size of the build Droplet |
+| `image_name` | `ubuntu-24-04-x64` | Base OS image to build from |
+| `runner_version` | `2.334.0` | GitHub Actions runner version to install |
+
+### Building a Snapshot
+
+1. **Install Packer** (if not already installed):
+   ```bash
+   # macOS
+   brew install packer
+   
+   # Linux
+   wget https://releases.hashicorp.com/packer/1.10.0/packer_1.10.0_linux_amd64.zip
+   unzip packer_1.10.0_linux_amd64.zip
+   sudo mv packer /usr/local/bin/
+   ```
+
+2. **Set your DigitalOcean token**:
+   ```bash
+   export DIGITALOCEAN_TOKEN=your_do_token_here
+   ```
+
+3. **Build the snapshot** (from the repository root):
+   ```bash
+   cd packer
+   packer init .
+   packer build digitalocean-ubuntu-2404.pkr.hcl
+   ```
+
+4. **Custom build with variables**:
+   ```bash
+   packer build \
+     -var "region=ams3" \
+     -var "runner_version=2.340.0" \
+     digitalocean-ubuntu-2404.pkr.hcl
+   ```
+
+5. **Find your snapshot**:
+   - The build outputs a `manifest.json` file with snapshot details
+   - Snapshot name format: `ubuntu-24-04-x64-runner-2.334.0-YYYYMMDD-HHmmss`
+   - View in DigitalOcean: **Images** → **Snapshots**
+
+### Using Your Snapshot
+
+Once the snapshot is built, reference it in your workflow labels:
+
+```yaml
+jobs:
+  my-job:
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - region/fra1
+      - size/s-2vcpu-4gb
+      - snapshot/ubuntu-24-04-x64-runner-2.334.0-20260517-103000
+```
+
+**Note**: The snapshot name must match exactly. You can find the exact name in the Packer build output or in your DigitalOcean dashboard under **Images** → **Snapshots**.
+
+### Snapshot Benefits
+
+- **Faster startup**: Runner binaries and dependencies are pre-installed (~30-60 seconds faster)
+- **Consistent environment**: Same base image for all jobs
+- **Custom tooling**: Add your own tools to the Packer build script
+- **Reduced bandwidth**: No need to download runner tarball on every job
+
+### Updating Snapshots
+
+When GitHub releases a new runner version:
+
+1. Update `runner_version` in the Packer file or pass via `-var`
+2. Rebuild the snapshot
+3. Update your workflow labels to reference the new snapshot name
+4. Delete old snapshots from DigitalOcean to avoid charges
+
 ## CI/CD
 
 The project uses GitHub Actions for continuous integration and deployment:
