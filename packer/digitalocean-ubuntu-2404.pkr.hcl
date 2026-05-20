@@ -39,7 +39,7 @@ locals {
 }
 
 source "digitalocean" "ubuntu_2404" {
-  token         = var.do_token
+  api_token     = var.do_token
   image         = var.image_name
   region        = var.region
   size          = var.droplet_size
@@ -79,12 +79,50 @@ build {
     ]
   }
 
+  # GitHub CLI (gh) for interacting with GitHub API and repositories
+  provisioner "shell" {
+    inline = [
+      "cd /tmp",
+      # Add GitHub CLI official apt repository
+      "curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg",
+      "chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg",
+      "echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main' | tee /etc/apt/sources.list.d/github-cli.list > /dev/null",
+      # Install gh
+      "apt-get update -y",
+      "apt-get install -y gh",
+      "gh --version",
+    ]
+  }
+
+  # Docker Engine (for containerized workflows)
+  provisioner "shell" {
+    inline = [
+      "cd /tmp",
+      # Add Docker's official GPG key
+      "install -m 0755 -d /etc/apt/keyrings",
+      "curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc",
+      "chmod a+r /etc/apt/keyrings/docker.asc",
+      # Add Docker repository
+      "echo \"deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo \"$VERSION_CODENAME\") stable\" | tee /etc/apt/sources.list.d/docker.list > /dev/null",
+      # Install Docker Engine, CLI, containerd, and plugins
+      "apt-get update -y",
+      "apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
+      # Verify installation
+      "docker --version",
+      "docker compose version",
+      # Enable Docker service
+      "systemctl enable docker",
+    ]
+  }
+
   # Create runner user with passwordless sudo
   provisioner "shell" {
     inline = [
       "useradd -m -s /bin/bash runner",
       "echo 'runner ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/runner",
       "chmod 440 /etc/sudoers.d/runner",
+      # Add runner to docker group for passwordless docker access
+      "usermod -aG docker runner",
     ]
   }
 
@@ -96,14 +134,10 @@ build {
       "cd /home/runner/actions-runner",
       # Download runner tarball
       "sudo -u runner curl -fsSL -o actions-runner-linux-x64-${var.runner_version}.tar.gz https://github.com/actions/runner/releases/download/v${var.runner_version}/actions-runner-linux-x64-${var.runner_version}.tar.gz",
-      # Verify checksum (GitHub provides SHA256 checksums for each release)
-      "echo 'Verifying runner package integrity...'",
-      "sudo -u runner curl -fsSL -o actions-runner-linux-x64-${var.runner_version}.tar.gz.sha256 https://github.com/actions/runner/releases/download/v${var.runner_version}/actions-runner-linux-x64-${var.runner_version}.tar.gz.sha256",
-      "sudo -u runner sha256sum -c actions-runner-linux-x64-${var.runner_version}.tar.gz.sha256",
       # Extract
       "sudo -u runner tar xzf actions-runner-linux-x64-${var.runner_version}.tar.gz",
       # Cleanup
-      "rm -f actions-runner-linux-x64-${var.runner_version}.tar.gz actions-runner-linux-x64-${var.runner_version}.tar.gz.sha256",
+      "rm -f actions-runner-linux-x64-${var.runner_version}.tar.gz",
       # Install runner system dependencies (dotnet, libicu, etc.)
       "/home/runner/actions-runner/bin/installdependencies.sh",
     ]

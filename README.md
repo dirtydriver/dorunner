@@ -228,6 +228,8 @@ The Packer build creates a snapshot with:
 - **GitHub Actions runner** binaries (version configurable via `runner_version` variable)
 - **System packages**: `build-essential`, `jq`, `yq`, `jc`, `python3.12-venv`, `unzip`
 - **AWS CLI v2** (commonly used in CI/CD workflows)
+- **GitHub CLI** (`gh`) for interacting with GitHub API and repositories
+- **Docker Engine** with Docker Compose plugin (runner user has passwordless docker access)
 - **Runner user** with passwordless sudo access
 - **Runner dependencies** (dotnet, libicu, etc.) pre-installed
 
