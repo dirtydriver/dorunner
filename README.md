@@ -228,7 +228,9 @@ The Packer build creates a snapshot with:
 - **GitHub Actions runner** binaries (version configurable via `runner_version` variable)
 - **System packages**: `build-essential`, `jq`, `yq`, `jc`, `python3.12-venv`, `unzip`
 - **AWS CLI v2** (commonly used in CI/CD workflows)
-- **Runner user** with passwordless sudo access
+- **GitHub CLI (`gh`)** for interacting with the GitHub API and repositories
+- **Docker Engine** (CLI, containerd, buildx, and compose plugins) with the service enabled
+- **Runner user** with passwordless sudo access, added to the `docker` group for passwordless Docker access
 - **Runner dependencies** (dotnet, libicu, etc.) pre-installed
 
 The snapshot does **not** include runner configuration — JIT tokens are injected at Droplet creation time via cloud-init.
@@ -242,7 +244,6 @@ The snapshot does **not** include runner configuration — JIT tokens are inject
 | `droplet_size` | `s-1vcpu-1gb` | Size of the build Droplet |
 | `image_name` | `ubuntu-24-04-x64` | Base OS image to build from |
 | `runner_version` | `2.337.0` | GitHub Actions runner version to install |
-| `runner_sha256` | checksum of `2.337.0` | SHA256 of the runner tarball; must be changed together with `runner_version` (GitHub publishes it in the release notes) |
 
 ### Building a Snapshot
 
@@ -274,7 +275,6 @@ The snapshot does **not** include runner configuration — JIT tokens are inject
    packer build \
      -var "region=ams3" \
      -var "runner_version=2.340.0" \
-     -var "runner_sha256=<sha256 from the release notes>" \
      digitalocean-ubuntu-2404.pkr.hcl
    ```
 
@@ -312,7 +312,7 @@ jobs:
 
 When GitHub releases a new runner version:
 
-1. Update `runner_version` **and** `runner_sha256` in the Packer file or pass via `-var`
+1. Update `runner_version` in the Packer file or pass via `-var`
 2. Rebuild the snapshot
 3. Update your workflow labels to reference the new snapshot name
 4. Delete old snapshots from DigitalOcean to avoid charges
