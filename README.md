@@ -173,7 +173,7 @@ All configuration is supplied via environment variables.
 | `GITHUB_RUNNER_GROUP_ID` | no | `1` | Runner group to register new runners into |
 | `DO_TOKEN` | yes | — | DigitalOcean personal access token |
 | `RUNNER_TTL` | no | `1h` | Maximum Droplet lifetime; older Droplets are force-deleted |
-| `RUNNER_VERSION` | no | `2.334.0` | `actions/runner` release version to install on stock images |
+| `RUNNER_VERSION` | no | `2.337.0` | `actions/runner` release version to install on stock images |
 | `PORT` | no | `8080` | HTTP port to listen on |
 
 ## Runner labels
@@ -228,7 +228,9 @@ The Packer build creates a snapshot with:
 - **GitHub Actions runner** binaries (version configurable via `runner_version` variable)
 - **System packages**: `build-essential`, `jq`, `yq`, `jc`, `python3.12-venv`, `unzip`
 - **AWS CLI v2** (commonly used in CI/CD workflows)
-- **Runner user** with passwordless sudo access
+- **GitHub CLI (`gh`)** for interacting with the GitHub API and repositories
+- **Docker Engine** (CLI, containerd, buildx, and compose plugins) with the service enabled
+- **Runner user** with passwordless sudo access, added to the `docker` group for passwordless Docker access
 - **Runner dependencies** (dotnet, libicu, etc.) pre-installed
 
 The snapshot does **not** include runner configuration — JIT tokens are injected at Droplet creation time via cloud-init.
@@ -238,10 +240,10 @@ The snapshot does **not** include runner configuration — JIT tokens are inject
 | Variable | Default | Description |
 |---|---|---|
 | `do_token` | `$DIGITALOCEAN_TOKEN` | DigitalOcean API token (required) |
-| `region` | `fra1` | Region where the build Droplet will be created |
+| `region` | `ams3` | Region where the build Droplet will be created |
 | `droplet_size` | `s-1vcpu-1gb` | Size of the build Droplet |
 | `image_name` | `ubuntu-24-04-x64` | Base OS image to build from |
-| `runner_version` | `2.334.0` | GitHub Actions runner version to install |
+| `runner_version` | `2.337.0` | GitHub Actions runner version to install |
 
 ### Building a Snapshot
 
