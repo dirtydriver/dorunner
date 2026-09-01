@@ -173,7 +173,7 @@ All configuration is supplied via environment variables.
 | `GITHUB_RUNNER_GROUP_ID` | no | `1` | Runner group to register new runners into |
 | `DO_TOKEN` | yes | — | DigitalOcean personal access token |
 | `RUNNER_TTL` | no | `1h` | Maximum Droplet lifetime; older Droplets are force-deleted |
-| `RUNNER_VERSION` | no | `2.334.0` | `actions/runner` release version to install on stock images |
+| `RUNNER_VERSION` | no | `2.337.0` | `actions/runner` release version to install on stock images |
 | `PORT` | no | `8080` | HTTP port to listen on |
 
 ## Runner labels
@@ -238,10 +238,11 @@ The snapshot does **not** include runner configuration — JIT tokens are inject
 | Variable | Default | Description |
 |---|---|---|
 | `do_token` | `$DIGITALOCEAN_TOKEN` | DigitalOcean API token (required) |
-| `region` | `fra1` | Region where the build Droplet will be created |
+| `region` | `ams3` | Region where the build Droplet will be created |
 | `droplet_size` | `s-1vcpu-1gb` | Size of the build Droplet |
 | `image_name` | `ubuntu-24-04-x64` | Base OS image to build from |
-| `runner_version` | `2.334.0` | GitHub Actions runner version to install |
+| `runner_version` | `2.337.0` | GitHub Actions runner version to install |
+| `runner_sha256` | checksum of `2.337.0` | SHA256 of the runner tarball; must be changed together with `runner_version` (GitHub publishes it in the release notes) |
 
 ### Building a Snapshot
 
@@ -273,6 +274,7 @@ The snapshot does **not** include runner configuration — JIT tokens are inject
    packer build \
      -var "region=ams3" \
      -var "runner_version=2.340.0" \
+     -var "runner_sha256=<sha256 from the release notes>" \
      digitalocean-ubuntu-2404.pkr.hcl
    ```
 
@@ -310,7 +312,7 @@ jobs:
 
 When GitHub releases a new runner version:
 
-1. Update `runner_version` in the Packer file or pass via `-var`
+1. Update `runner_version` **and** `runner_sha256` in the Packer file or pass via `-var`
 2. Rebuild the snapshot
 3. Update your workflow labels to reference the new snapshot name
 4. Delete old snapshots from DigitalOcean to avoid charges

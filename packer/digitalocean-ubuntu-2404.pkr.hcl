@@ -30,7 +30,15 @@ variable "image_name" {
 
 variable "runner_version" {
   type    = string
-  default = "2.334.0"
+  default = "2.337.0"
+}
+
+# SHA256 of actions-runner-linux-x64-<runner_version>.tar.gz.
+# GitHub publishes this in the release notes only (there is no .sha256 asset),
+# so it must be updated together with runner_version.
+variable "runner_sha256" {
+  type    = string
+  default = "70920811a4f8ad4328818682bca5c6469c1c942fab52448868071d0063816613"
 }
 
 locals {
@@ -39,7 +47,7 @@ locals {
 }
 
 source "digitalocean" "ubuntu_2404" {
-  token         = var.do_token
+  api_token     = var.do_token
   image         = var.image_name
   region        = var.region
   size          = var.droplet_size
@@ -96,14 +104,13 @@ build {
       "cd /home/runner/actions-runner",
       # Download runner tarball
       "sudo -u runner curl -fsSL -o actions-runner-linux-x64-${var.runner_version}.tar.gz https://github.com/actions/runner/releases/download/v${var.runner_version}/actions-runner-linux-x64-${var.runner_version}.tar.gz",
-      # Verify checksum (GitHub provides SHA256 checksums for each release)
+      # Verify checksum against the value published in the release notes
       "echo 'Verifying runner package integrity...'",
-      "sudo -u runner curl -fsSL -o actions-runner-linux-x64-${var.runner_version}.tar.gz.sha256 https://github.com/actions/runner/releases/download/v${var.runner_version}/actions-runner-linux-x64-${var.runner_version}.tar.gz.sha256",
-      "sudo -u runner sha256sum -c actions-runner-linux-x64-${var.runner_version}.tar.gz.sha256",
+      "echo '${var.runner_sha256}  actions-runner-linux-x64-${var.runner_version}.tar.gz' | sha256sum -c -",
       # Extract
       "sudo -u runner tar xzf actions-runner-linux-x64-${var.runner_version}.tar.gz",
       # Cleanup
-      "rm -f actions-runner-linux-x64-${var.runner_version}.tar.gz actions-runner-linux-x64-${var.runner_version}.tar.gz.sha256",
+      "rm -f actions-runner-linux-x64-${var.runner_version}.tar.gz",
       # Install runner system dependencies (dotnet, libicu, etc.)
       "/home/runner/actions-runner/bin/installdependencies.sh",
     ]
