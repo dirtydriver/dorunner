@@ -219,19 +219,22 @@ Used when the Droplet is created from a pre-baked Packer snapshot that already h
 
 ## Building Custom Snapshots with Packer
 
-The `packer/` directory contains a Packer configuration for building pre-configured DigitalOcean snapshots with GitHub Actions runner binaries and common CI/CD tools pre-installed. Using snapshots significantly reduces Droplet startup time compared to stock images.
+The `packer/` directory contains a Packer configuration for building pre-configured DigitalOcean snapshots with the GitHub Actions runner binaries and the CI tools our workflows actually use pre-installed. Provisioning is split into modular scripts under `packer/scripts/`. Using snapshots significantly reduces Droplet startup time compared to stock images.
 
 ### What's Included in the Snapshot
 
-The Packer build creates a snapshot with:
+Provisioning scripts (`packer/scripts/`):
 
-- **GitHub Actions runner** binaries (version configurable via `runner_version` variable)
-- **System packages**: `build-essential`, `jq`, `yq`, `jc`, `python3.12-venv`, `unzip`
-- **AWS CLI v2** (commonly used in CI/CD workflows)
-- **GitHub CLI (`gh`)** for interacting with the GitHub API and repositories
-- **Docker Engine** (CLI, containerd, buildx, and compose plugins) with the service enabled
-- **Runner user** with passwordless sudo access, added to the `docker` group for passwordless Docker access
-- **Runner dependencies** (dotnet, libicu, etc.) pre-installed
+| Script | Contents |
+|---|---|
+| `00-base-packages.sh` | Version-control & shell baseline + build toolchain: `build-essential` (gcc/cc + binutils/ld), `git` (≥ 2.18, for `actions/checkout@v7` recursive submodules), `curl`, `ca-certificates`, `unzip`/`zip`, `bash`/`coreutils`/`grep`/`sed`/`findutils`/`gawk`, plus `jq` and `yq` (mikefarah/Go) |
+| `10-node.sh` | Node.js (full host install via NodeSource; major set by `node_major`) |
+| `15-rust.sh` | Rust (`rustc`, `cargo`, `rustfmt`, `clippy`) + `cargo-audit`, and **Zig** (Lambda cross-builds) |
+| `20-cloud-clis.sh` | **AWS CLI v2** (`aws`), **AWS SAM CLI** (`sam`), **Azure CLI** (`az`), **GitHub CLI** (`gh`) |
+| `21-docker.sh` | Docker Engine (CLI, containerd, Buildx, Compose), service enabled |
+| `90-runner-user.sh` | Creates the `runner` user (passwordless sudo, in `docker` group) |
+| `91-actions-runner.sh` | Downloads the GitHub Actions runner binaries + `installdependencies.sh` |
+| `99-cleanup.sh` | apt/log/history cleanup and machine-id reset to shrink the snapshot |
 
 The snapshot does **not** include runner configuration — JIT tokens are injected at Droplet creation time via cloud-init.
 
@@ -241,9 +244,11 @@ The snapshot does **not** include runner configuration — JIT tokens are inject
 |---|---|---|
 | `do_token` | `$DIGITALOCEAN_TOKEN` | DigitalOcean API token (required) |
 | `region` | `ams3` | Region where the build Droplet will be created |
-| `droplet_size` | `s-1vcpu-1gb` | Size of the build Droplet |
+| `droplet_size` | `s-2vcpu-4gb` | Size of the build Droplet |
 | `image_name` | `ubuntu-24-04-x64` | Base OS image to build from |
 | `runner_version` | `2.337.0` | GitHub Actions runner version to install |
+| `node_major` | `22` | Node.js major version to install (via NodeSource) |
+| `zig_version` | `0.14.1` | Zig version to install (cross-build toolchain) |
 
 ### Building a Snapshot
 

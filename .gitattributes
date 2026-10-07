@@ -1,0 +1,4 @@
+# Ensure shell scripts and Packer provisioner scripts always use LF line
+# endings. CRLF breaks the shebang (`#!/bin/bash^M`) on the Linux build host.
+*.sh text eol=lf
+packer/scripts/* text eol=lf
