@@ -106,8 +106,8 @@ func TestLoadConfig_Success(t *testing.T) {
 		if cfg.RunnerTTL != time.Hour {
 			t.Errorf("RunnerTTL = %v, want 1h", cfg.RunnerTTL)
 		}
-		if cfg.RunnerVersion != "2.334.0" {
-			t.Errorf("RunnerVersion = %v, want 2.334.0", cfg.RunnerVersion)
+		if cfg.RunnerVersion != "2.337.0" {
+			t.Errorf("RunnerVersion = %v, want 2.337.0", cfg.RunnerVersion)
 		}
 	})
 

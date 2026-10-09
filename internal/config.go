@@ -73,7 +73,7 @@ func LoadConfig() *Config {
 		GitHubRunnerGroupID:  groupid,
 		DOToken:              must("DO_TOKEN"),
 		RunnerTTL:            runnerTTL,
-		RunnerVersion:        optional("RUNNER_VERSION", "2.334.0"),
+		RunnerVersion:        optional("RUNNER_VERSION", "2.337.0"),
 	}
 
 	return cfg

@@ -29,5 +29,11 @@ go.work.sum
 
 # Editor/IDE
 # .idea/
+.kilo/
+.claude/
 .vscode/
 .claude/
+# Packer
+packer/manifest.json
+packer/packer_cache/
+*.pkrvars.hcl

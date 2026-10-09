@@ -20,7 +20,7 @@ variable "region" {
 
 variable "droplet_size" {
   type    = string
-  default = "s-1vcpu-1gb"
+  default = "s-2vcpu-4gb"
 }
 
 variable "image_name" {
@@ -30,7 +30,17 @@ variable "image_name" {
 
 variable "runner_version" {
   type    = string
-  default = "2.334.0"
+  default = "2.337.0"
+}
+
+variable "node_major" {
+  type    = string
+  default = "22"
+}
+
+variable "zig_version" {
+  type    = string
+  default = "0.14.1"
 }
 
 locals {
@@ -39,7 +49,7 @@ locals {
 }
 
 source "digitalocean" "ubuntu_2404" {
-  token         = var.do_token
+  api_token     = var.do_token
   image         = var.image_name
   region        = var.region
   size          = var.droplet_size
@@ -51,62 +61,60 @@ build {
   name    = "github-runner-ubuntu-2404"
   sources = ["source.digitalocean.ubuntu_2404"]
 
-  # Wait for cloud-init to finish before provisioning
+  # Wait for cloud-init to finish before provisioning.
   provisioner "shell" {
-    inline = [
-      "cloud-init status --wait"
+    inline = ["cloud-init status --wait"]
+  }
+
+  # Base packages: build-essential, git, curl, ca-certificates, jq, yq,
+  # unzip/zip and the shell baseline (bash/coreutils/grep/sed/findutils/gawk).
+  provisioner "shell" {
+    script           = "scripts/00-base-packages.sh"
+    environment_vars = ["DEBIAN_FRONTEND=noninteractive"]
+  }
+
+  # Node.js (full host install via NodeSource).
+  provisioner "shell" {
+    script = "scripts/10-node.sh"
+    environment_vars = [
+      "DEBIAN_FRONTEND=noninteractive",
+      "NODE_MAJOR=${var.node_major}",
     ]
   }
 
-  # System packages
+  # Rust (rustup + cargo + cargo-audit + rustfmt) and Zig cross-build toolchain.
   provisioner "shell" {
-    inline = [
-      "export DEBIAN_FRONTEND=noninteractive",
-      "apt-get update -y",
-      "apt-get install -y build-essential jq yq jc python3.12-venv unzip",
-    ]
+    script           = "scripts/15-rust.sh"
+    environment_vars = ["ZIG_VERSION=${var.zig_version}"]
   }
 
-  # AWS CLI v2 (commonly used in CI/CD workflows)
+  # Cloud / deploy CLIs: AWS CLI v2, Azure CLI, GitHub CLI.
   provisioner "shell" {
-    inline = [
-      "cd /tmp",
-      "curl -fsSL 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip' -o awscliv2.zip",
-      "unzip -q awscliv2.zip",
-      "./aws/install",
-      "aws --version",
-      "rm -rf awscliv2.zip aws/",
-    ]
+    script           = "scripts/20-cloud-clis.sh"
+    environment_vars = ["DEBIAN_FRONTEND=noninteractive"]
   }
 
-  # Create runner user with passwordless sudo
+  # Docker Engine (CLI, containerd, Buildx, Compose).
   provisioner "shell" {
-    inline = [
-      "useradd -m -s /bin/bash runner",
-      "echo 'runner ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/runner",
-      "chmod 440 /etc/sudoers.d/runner",
-    ]
+    script           = "scripts/21-docker.sh"
+    environment_vars = ["DEBIAN_FRONTEND=noninteractive"]
   }
 
-  # Download and extract GitHub Actions runner
-  # NOTE: No configure/run here — JIT config is injected at Droplet boot time
+  # Runner user with passwordless sudo, added to docker group.
   provisioner "shell" {
-    inline = [
-      "sudo -u runner mkdir -p /home/runner/actions-runner",
-      "cd /home/runner/actions-runner",
-      # Download runner tarball
-      "sudo -u runner curl -fsSL -o actions-runner-linux-x64-${var.runner_version}.tar.gz https://github.com/actions/runner/releases/download/v${var.runner_version}/actions-runner-linux-x64-${var.runner_version}.tar.gz",
-      # Verify checksum (GitHub provides SHA256 checksums for each release)
-      "echo 'Verifying runner package integrity...'",
-      "sudo -u runner curl -fsSL -o actions-runner-linux-x64-${var.runner_version}.tar.gz.sha256 https://github.com/actions/runner/releases/download/v${var.runner_version}/actions-runner-linux-x64-${var.runner_version}.tar.gz.sha256",
-      "sudo -u runner sha256sum -c actions-runner-linux-x64-${var.runner_version}.tar.gz.sha256",
-      # Extract
-      "sudo -u runner tar xzf actions-runner-linux-x64-${var.runner_version}.tar.gz",
-      # Cleanup
-      "rm -f actions-runner-linux-x64-${var.runner_version}.tar.gz actions-runner-linux-x64-${var.runner_version}.tar.gz.sha256",
-      # Install runner system dependencies (dotnet, libicu, etc.)
-      "/home/runner/actions-runner/bin/installdependencies.sh",
-    ]
+    script = "scripts/90-runner-user.sh"
+  }
+
+  # GitHub Actions runner binaries (JIT config injected at boot, not here).
+  provisioner "shell" {
+    script           = "scripts/91-actions-runner.sh"
+    environment_vars = ["RUNNER_VERSION=${var.runner_version}"]
+  }
+
+  # Final cleanup to shrink the snapshot.
+  provisioner "shell" {
+    script           = "scripts/99-cleanup.sh"
+    environment_vars = ["DEBIAN_FRONTEND=noninteractive"]
   }
 
   post-processor "manifest" {
