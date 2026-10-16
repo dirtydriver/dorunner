@@ -2,9 +2,11 @@ package internal
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/google/go-github/v84/github"
@@ -20,13 +22,28 @@ type GitHubClient struct {
 // installation using the app ID, installation ID, and PEM private key from cfg.
 // Exits the process if the transport cannot be initialised.
 func NewGitHubClient(config *Config) *GitHubClient {
-	transport, err := ghinstallation.New(http.DefaultTransport, config.GitHubAppID, config.GitHubInstallationID, []byte(config.GitHubAppPrivateKey))
+	transport, err := ghinstallation.New(http.DefaultTransport, config.GitHubAppID, config.GitHubInstallationID, normalizePEM(config.GitHubAppPrivateKey))
 	if err != nil {
 		log.Fatalf("Failed to create GitHub client: %v", err)
 	}
 	return &GitHubClient{
 		client: github.NewClient(&http.Client{Transport: transport}),
 	}
+}
+
+// normalizePEM repairs private keys mangled by env-var handling: surrounding
+// quotes, literal "\n" sequences instead of newlines, or a base64-encoded PEM.
+func normalizePEM(key string) []byte {
+	key = strings.TrimSpace(key)
+	key = strings.Trim(key, `"'`)
+	if !strings.Contains(key, "-----BEGIN") {
+		if decoded, err := base64.StdEncoding.DecodeString(key); err == nil {
+			key = string(decoded)
+		}
+	}
+	key = strings.ReplaceAll(key, `\n`, "\n")
+	key = strings.ReplaceAll(key, "\r\n", "\n")
+	return []byte(key)
 }
 
 // FetchJITConfig generates a just-in-time runner registration token for a
