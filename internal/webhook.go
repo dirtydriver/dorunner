@@ -118,7 +118,7 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				log.Printf("job %d is not for a self-hosted runner, ignoring", payLoad.WorkflowJob.ID)
 				return
 			}
-			runnerName := fmt.Sprintf("do-runner-%d", payLoad.WorkflowJob.ID)
+			runnerName := fmt.Sprintf("do-runner-%s-%d", sanitizeName(runnerRepoName(payLoad.WorkflowJob.Labels, repoName)), payLoad.WorkflowJob.ID)
 			log.Printf("[%s] queued — fetching JIT config", runnerName)
 			jitConfig, err := h.github.FetchJITConfig(ctx, repoOwner, repoName, runnerName, h.cfg.GitHubRunnerGroupID, payLoad.WorkflowJob.Labels)
 			if err != nil {
@@ -156,6 +156,41 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 
 }
+
+// runnerRepoName returns the name used to identify a job in the droplet name:
+// the value of a "repo/<name>" runner label if present, otherwise fallback
+// (the repository name from the webhook payload).
+func runnerRepoName(labels []string, fallback string) string {
+	for _, label := range labels {
+		if value, ok := strings.CutPrefix(label, "repo/"); ok && value != "" {
+			return value
+		}
+	}
+	return fallback
+}
+
+// maxRepoNameLen caps the repository part of a runner name so the droplet
+// name stays well under DigitalOcean's length limit.
+const maxRepoNameLen = 50
+
+// sanitizeName turns a repository name into a string safe for droplet
+// hostnames: only letters, digits, dots and dashes, everything else becomes a
+// dash, and the result is truncated to maxRepoNameLen.
+func sanitizeName(name string) string {
+	b := []byte(name)
+	for i, c := range b {
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '.', c == '-':
+		default:
+			b[i] = '-'
+		}
+	}
+	if len(b) > maxRepoNameLen {
+		b = b[:maxRepoNameLen]
+	}
+	return string(b)
+}
+
 // containsLabel reports whether label appears in labels.
 func containsLabel(labels []string, label string) bool {
 	for _, l := range labels {
