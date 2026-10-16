@@ -53,6 +53,8 @@ Self-hosted GitHub Actions runner controller that provisions ephemeral DigitalOc
 - In Docker: Use `-e GITHUB_APP_PRIVATE_KEY="$(cat private-key.pem)"`
 - In DigitalOcean App Platform: Paste the raw PEM contents including `-----BEGIN RSA PRIVATE KEY-----` and `-----END RSA PRIVATE KEY-----` lines
 
+dorunner tolerates keys mangled by environment-variable handling: surrounding quotes, literal `\n` sequences instead of newlines, and base64-encoded PEM are all normalised before parsing.
+
 ### Step 3: Install the GitHub App
 
 1. On your GitHub App's settings page, click **Install App** in the left sidebar
@@ -150,6 +152,13 @@ See the [Running](#running) section for deployment options.
 - Check webhook deliveries in your repository: Settings → Webhooks → Recent Deliveries
 - Ensure `X-Hub-Signature-256` validation is passing
 
+**`Failed to create GitHub client: could not parse private key`:**
+- Make sure `GITHUB_APP_PRIVATE_KEY` contains the complete PEM, including the `-----BEGIN ...-----` and `-----END ...-----` lines
+- Paste the downloaded `.pem` file unchanged; if it still fails, generate a new private key in the GitHub App settings
+
+**Log timestamps are in UTC:**
+- The timestamp prefix added by DigitalOcean's log viewer is always UTC; set `TZ` to change the timestamp printed by dorunner itself
+
 **Droplet creation fails:**
 - Verify `DO_TOKEN` has write permissions
 - Check DigitalOcean API rate limits
@@ -175,6 +184,9 @@ All configuration is supplied via environment variables.
 | `RUNNER_TTL` | no | `1h` | Maximum Droplet lifetime; older Droplets are force-deleted |
 | `RUNNER_VERSION` | no | `2.337.0` | `actions/runner` release version to install on stock images |
 | `PORT` | no | `8080` | HTTP port to listen on |
+| `TZ` | no | `UTC` | IANA time zone used for timestamps in application logs (e.g. `Europe/Budapest`). The zone database is embedded in the binary, so it works with any runtime image |
+
+All variables are read at startup, so on DigitalOcean App Platform set them with the **Run time** scope and mark secrets as encrypted.
 
 ## Runner labels
 
@@ -378,7 +390,7 @@ The easiest way to deploy dorunner is via DigitalOcean App Platform:
 2. Go to [DigitalOcean App Platform](https://cloud.digitalocean.com/apps) → **Create App**
 3. Connect your GitHub repository
 4. Set the component type to **Web Service**
-5. Add all required environment variables as **encrypted secrets**
+5. Add all required environment variables with the **Run time** scope, and mark secrets (private key, tokens, webhook secret) as **encrypted**. Optionally add `TZ` (e.g. `Europe/Budapest`) to get local timestamps in the app logs
 6. Deploy — App Platform will build from the Dockerfile automatically
 7. Copy the public URL (e.g. `https://dorunner-xxxxx.ondigitalocean.app`) — use this as your webhook Payload URL in Step 3.5
 8. Go back to **Step 3.5** and update the webhook **Payload URL** with your App Platform URL:

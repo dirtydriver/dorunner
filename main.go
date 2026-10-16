@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"time"
+	_ "time/tzdata" // embed zoneinfo so TZ works regardless of the runtime image
 
 	"github.com/dirtydriver/dorunner/internal"
 )
